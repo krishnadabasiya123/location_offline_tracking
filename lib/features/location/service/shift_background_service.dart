@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
@@ -24,6 +25,7 @@ import 'package:path_provider/path_provider.dart';
 
 @pragma('vm:entry-point')
 Future<void> onShiftServiceStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
   final tracker = _BackgroundLocationTracker(service);
   await tracker.initialize();
 }
@@ -107,30 +109,39 @@ class _BackgroundLocationTracker {
       if (retrievedData is Map) {
         final formattedData = Map<String, dynamic>.from(retrievedData);
         if (formattedData['location'] is List) {
-          final locs = List<dynamic>.from(formattedData['location'] as Iterable).map((loc) {
-            if (loc is Map) {
-              final newLoc = Map<String, dynamic>.from(loc);
-              final timeVal = newLoc['time'];
-              if (timeVal is int) {
-                final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
-                newLoc['time'] = DateFormat('dd-MM-yyyy HH:mm:ss').format(dt);
-              }
-              return newLoc;
-            }
-            return loc;
-          }).toList();
+          final locs = List<dynamic>.from(formattedData['location'] as Iterable)
+              .map((loc) {
+                if (loc is Map) {
+                  final newLoc = Map<String, dynamic>.from(loc);
+                  final timeVal = newLoc['time'];
+                  if (timeVal is int) {
+                    final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
+                    newLoc['time'] = DateFormat(
+                      'dd-MM-yyyy HH:mm:ss',
+                    ).format(dt);
+                  }
+                  return newLoc;
+                }
+                return loc;
+              })
+              .toList();
           formattedData['location'] = locs;
         }
         print('📦 RETRIEVED FROM HIVE AFTER SAVE:');
-        const JsonEncoder.withIndent('  ')
-            .convert(formattedData)
-            .split('\n')
-            .forEach(print);
+        const JsonEncoder.withIndent(
+          '  ',
+        ).convert(formattedData).split('\n').forEach(print);
       } else {
         print('📦 RETRIEVED FROM HIVE AFTER SAVE: $retrievedData');
       }
     } on Exception catch (e) {
       print('❌ BG SAVE ERROR: $e');
+    } finally {
+      try {
+        if (Hive.isBoxOpen(LocationRepository.kHiveBoxName)) {
+          await Hive.box(LocationRepository.kHiveBoxName).close();
+        }
+      } catch (_) {}
     }
   }
 
@@ -253,6 +264,11 @@ class _BackgroundLocationTracker {
     } on Exception catch (e) {
       print('❌ BG syncToServer error: $e');
     } finally {
+      try {
+        if (Hive.isBoxOpen(LocationRepository.kHiveBoxName)) {
+          await Hive.box(LocationRepository.kHiveBoxName).close();
+        }
+      } catch (_) {}
       isSyncing = false;
     }
   }
@@ -373,6 +389,9 @@ class _BackgroundLocationTracker {
             if (todayData is Map && todayData['location'] is List) {
               count = (todayData['location'] as List).length;
             }
+            try {
+              await box.close();
+            } catch (_) {}
 
             if (count >= 500) {
               await syncToServer();
@@ -439,6 +458,10 @@ class _BackgroundLocationTracker {
     if (todayData is Map && todayData['location'] is List) {
       count = (todayData['location'] as List).length;
     }
+
+    try {
+      await box.close();
+    } catch (_) {}
 
     if (count > 0) {
       await syncToServer();
@@ -543,20 +566,31 @@ class _BackgroundLocationTracker {
     await positionSubscription?.cancel();
 
     // Final sync attempt (Temporarily commented for testing)
-    if (token != null) {
-      try {
-        final box = await openLocationBox();
-        await syncLocationsDirect(token!, box);
-        await box.close();
-      } on Exception catch (_) {}
-    }
-
+    // if (token != null) {
+    // try {
+    //   final box = await openLocationBox();
+    //   await syncLocationsDirect(token!, box);
+    //   await box.close();
+    // } on Exception catch (_) {}
+    // }
+    try {
+      if (Hive.isBoxOpen(LocationRepository.kHiveBoxName)) {
+        await Hive.box<dynamic>(LocationRepository.kHiveBoxName).close();
+      }
+    } on Exception catch (_) {}
     // Set isActive = false in shift_config
     try {
       final configBox = await Hive.openBox<dynamic>('shift_config');
       await configBox.put('isActive', false);
       await configBox.close();
     } on Exception catch (_) {}
+
+    // Ensure the location box is cleanly closed when stopping tracking to flush to disk
+    try {
+      if (Hive.isBoxOpen(LocationRepository.kHiveBoxName)) {
+        await Hive.box(LocationRepository.kHiveBoxName).close();
+      }
+    } catch (_) {}
 
     service.stopSelf();
   }
@@ -680,7 +714,10 @@ Future<void> configureShiftService() async {
       initialNotificationTitle: 'Omkar - Shift Active',
       initialNotificationContent: 'Tracking your shift location',
       foregroundServiceNotificationId: 1001,
-      foregroundServiceTypes: [AndroidForegroundType.dataSync],
+      foregroundServiceTypes: [
+        AndroidForegroundType.location,
+        AndroidForegroundType.dataSync,
+      ],
     ),
     iosConfiguration: IosConfiguration(autoStart: false),
   );

@@ -271,6 +271,7 @@ import 'package:intl/intl.dart';
 import 'package:omkar_sale/core/app/all_import_file.dart';
 import 'package:omkar_sale/features/location/repository/location_repository.dart';
 import 'package:omkar_sale/utils/connectivity.dart';
+import 'package:omkar_sale/features/location/service/background_sync_service.dart';
 
 class ManualSyncService {
   ManualSyncService._();
@@ -296,21 +297,33 @@ class ManualSyncService {
     required Map<String, dynamic> lastInEntry,
     required int lastInEntryIndex,
   }) async {
-    final hasInternet = await InternetConnectivity.checkInternet();
-    if (!hasInternet) {
-      // Append the out entry to Hive as unsynced
-      final activeBox = await _getClockInOutBox();
-
-      final List<dynamic> existingEntries = List<dynamic>.from(
-        activeBox.get(targetDateKey) as Iterable? ?? [],
+    // Prevent conflict: If background sync is currently running, wait for it to complete
+    if (BackgroundSyncService.instance.isSyncing &&
+        BackgroundSyncService.instance.activeSyncFuture != null) {
+      developer.log(
+        "⏳ [ManualSyncService] Background sync is active. Awaiting completion before running manual sync...",
       );
-
-      existingEntries.add(outEntry);
-      await activeBox.put(targetDateKey, existingEntries);
-      return;
+      await BackgroundSyncService.instance.activeSyncFuture;
     }
 
+    if (_isManualSyncing) return;
+    _isManualSyncing = true;
+
     try {
+      final hasInternet = await InternetConnectivity.checkInternet();
+      if (!hasInternet) {
+        // Append the out entry to Hive as unsynced
+        final activeBox = await _getClockInOutBox();
+
+        final List<dynamic> existingEntries = List<dynamic>.from(
+          activeBox.get(targetDateKey) as Iterable? ?? [],
+        );
+
+        existingEntries.add(outEntry);
+        await activeBox.put(targetDateKey, existingEntries);
+        return;
+      }
+
       final repository = ClockInOutRepository();
 
       developer.log(
@@ -371,6 +384,8 @@ class ManualSyncService {
       );
       existingEntries.add(outEntry);
       await activeBox.put(targetDateKey, existingEntries);
+    } finally {
+      _isManualSyncing = false;
     }
   }
 
@@ -467,23 +482,36 @@ class ManualSyncService {
       List<dynamic> coordinatesToSync = [];
       try {
         if (Hive.isBoxOpen(locationDataBox)) {
-          await Hive.box(locationDataBox).close();
+          try {
+            await Hive.box(locationDataBox).close();
+          } catch (e) {
+            developer.log("⚠️ [ManualSyncService] Ignored error closing box: $e");
+          }
         }
         final locBox = await Hive.openBox(locationDataBox);
         final locBoxData = locBox.get(syncDate);
 
-        final List<dynamic> allLocations = List<dynamic>.from(
-          locBoxData['location'] as List<dynamic>,
-        );
-        coordinatesToSync = allLocations.where((loc) {
-          if (loc is! Map) return false;
-          final int? locTime = loc['time'] as int?;
-          if (locTime == null) return true;
-          final bool isAfterClockIn = locTime >= fromTimestamp;
-          final bool isBeforeClockOut = locTime <= upToTimestamp;
-          return isAfterClockIn && isBeforeClockOut;
-        }).toList();
-      } catch (_) {}
+        // developer.log("📦 [ManualSyncService] Keys in locationDataBox: ${locBox.keys.toList()}");
+        // developer.log("📦 [ManualSyncService] Raw data for $syncDate: $locBoxData");
+
+        if (locBoxData != null && locBoxData['location'] != null) {
+          final List<dynamic> allLocations = List<dynamic>.from(
+            locBoxData['location'] as List<dynamic>,
+          );
+          coordinatesToSync = allLocations.where((loc) {
+            if (loc is! Map) return false;
+            final int? locTime = loc['time'] as int?;
+            if (locTime == null) return true;
+            final bool isAfterClockIn =
+                fromTimestamp == null || locTime >= fromTimestamp;
+            final bool isBeforeClockOut =
+                upToTimestamp == null || locTime <= upToTimestamp;
+            return isAfterClockIn && isBeforeClockOut;
+          }).toList();
+        }
+      } catch (e) {
+        developer.log("❌ [ManualSyncService] Error reading from Hive box: $e");
+      }
 
       final formattedCoords = coordinatesToSync.map((loc) {
         if (loc is Map) {

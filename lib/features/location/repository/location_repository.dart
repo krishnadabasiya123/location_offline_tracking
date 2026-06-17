@@ -66,6 +66,13 @@ class LocationRepository {
     _isSyncing = true;
 
     try {
+      if (Hive.isBoxOpen(kHiveBoxName)) {
+        try {
+          await Hive.box(kHiveBoxName).close();
+        } catch (e) {
+          print('⚠️ REPO: Ignored error closing box: $e');
+        }
+      }
       final locBox = await Hive.openBox(kHiveBoxName);
 
       final formattedMap = locBox.toMap().map((key, value) {
@@ -194,8 +201,7 @@ class LocationRepository {
       }
 
       final isAfterClockIn = fromTimestamp == null || locTime >= fromTimestamp;
-      final isBeforeClockOut =
-          upToTimestamp == null || locTime <= upToTimestamp;
+      final isBeforeClockOut = upToTimestamp == null || locTime <= upToTimestamp;
 
       if (isAfterClockIn && isBeforeClockOut) {
         sync.add(loc);

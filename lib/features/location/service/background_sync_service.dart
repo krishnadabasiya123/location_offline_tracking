@@ -59,12 +59,12 @@ class BackgroundSyncService {
     if (!hasInternet) return;
 
     // Prevent conflict: If manual sync is currently active, abort background sync
-    // if (ManualSyncService.instance.isManualSyncing) {
-    //   print(
-    //     '⚠️ [BackgroundSyncService] Manual sync is active. Aborting background sync.',
-    //   );
-    //   return;
-    // }
+    if (ManualSyncService.instance.isManualSyncing) {
+      print(
+        '⚠️ [BackgroundSyncService] Manual sync is active. Aborting background sync.',
+      );
+      return;
+    }
 
     _isSyncing = true;
     _activeSync = syncAllPendingData();
@@ -247,6 +247,7 @@ class BackgroundSyncService {
     // 1. Sync the 'in' entry
     bool inSync = inRef.entry['isSync'] as bool? ?? false;
     if (!inSync) {
+      print('📤 [BackgroundSyncService] Sending Clock-In data: ${inRef.entry}');
       inSync = await repository.clockInApiDirectly(inRef.entry);
       inRef.entry['isSync'] = inSync;
 
@@ -279,6 +280,7 @@ class BackgroundSyncService {
     // 3. Sync the corresponding 'out' entry
     bool outSync = outRef.entry['isSync'] as bool? ?? false;
     if (!outSync) {
+      print('📤 [BackgroundSyncService] Sending Clock-Out data: ${outRef.entry}');
       outSync = await repository.clockOutApiDirectly(outRef.entry);
       outRef.entry['isSync'] = outSync;
 
@@ -325,6 +327,53 @@ class BackgroundSyncService {
 
     bool allSuccess = true;
     for (final syncDate in datesToSync) {
+      // Print exactly which location data points are going to be synced
+      List<dynamic> coordinatesToSync = [];
+      try {
+        final locationDataBox = 'locationDataBox';
+        Box? locBox;
+        if (Hive.isBoxOpen(locationDataBox)) {
+          locBox = Hive.box(locationDataBox);
+        } else {
+          locBox = await Hive.openBox(locationDataBox);
+        }
+        final locBoxData = locBox.get(syncDate);
+        if (locBoxData != null && locBoxData['location'] != null) {
+          final List<dynamic> allLocations = List<dynamic>.from(
+            locBoxData['location'] as List<dynamic>,
+          );
+          coordinatesToSync = allLocations.where((loc) {
+            if (loc is! Map) return false;
+            final int? locTime = loc['time'] as int?;
+            if (locTime == null) return true;
+            return locTime >= fromTimestamp && locTime <= upToTimestamp;
+          }).toList();
+        }
+        // Try to close to release the lock, ignore any error
+        try {
+          await locBox.close();
+        } catch (_) {}
+      } catch (e) {
+        print("⚠️ [BackgroundSyncService] Error reading location details for logging: $e");
+      }
+
+      final formattedCoords = coordinatesToSync.map((loc) {
+        if (loc is Map) {
+          final newLoc = Map<String, dynamic>.from(loc);
+          final timeVal = newLoc['time'];
+          if (timeVal is int) {
+            final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
+            newLoc['time'] = DateFormat('dd-MM-yyyy HH:mm:ss').format(dt);
+          }
+          return newLoc;
+        }
+        return loc;
+      }).toList();
+
+      print(
+        "📤 [BackgroundSyncService] Syncing locations for date $syncDate. Data: $formattedCoords",
+      );
+
       final syncResult = await LocationRepository().syncLocationsToServer(
         date: syncDate,
         upToTimestamp: upToTimestamp,
