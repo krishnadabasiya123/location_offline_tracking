@@ -1,0 +1,12 @@
+@ ₹${item.price.toStringAsFixed(2)}
+AIzaSyCP5Rw3DY87Txo43utDonMXyTQo9QwJXTI
+AIzaSyD_4nLEpYfXEsbh4zlBPzI6v5gxzuNKyCE
+APP VERSION 2.4.0
+
+Address not found
+
+Cancelled
+City Center Market
+
+Delivered
+Electronics

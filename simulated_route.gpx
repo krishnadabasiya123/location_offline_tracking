@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="pymobiledevice3" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Simulated Route</name>
+    <trkseg>
+      <trkpt lat="37.77490" lon="-122.41940">
+        <time>2026-05-28T08:00:00Z</time>
+      </trkpt>
+      <trkpt lat="37.77510" lon="-122.41920">
+        <time>2026-05-28T08:00:05Z</time>
+      </trkpt>
+      <trkpt lat="37.77530" lon="-122.41900">
+        <time>2026-05-28T08:00:10Z</time>
+      </trkpt>
+      <trkpt lat="37.77550" lon="-122.41880">
+        <time>2026-05-28T08:00:15Z</time>
+      </trkpt>
+      <trkpt lat="37.77570" lon="-122.41860">
+        <time>2026-05-28T08:00:20Z</time>
+      </trkpt>
+      <trkpt lat="37.77590" lon="-122.41840">
+        <time>2026-05-28T08:00:25Z</time>
+      </trkpt>
+      <trkpt lat="37.77610" lon="-122.41820">
+        <time>2026-05-28T08:00:30Z</time>
+      </trkpt>
+      <trkpt lat="37.77630" lon="-122.41800">
+        <time>2026-05-28T08:00:35Z</time>
+      </trkpt>
+      <trkpt lat="37.77650" lon="-122.41780">
+        <time>2026-05-28T08:00:40Z</time>
+      </trkpt>
+      <trkpt lat="37.77670" lon="-122.41760">
+        <time>2026-05-28T08:00:45Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>

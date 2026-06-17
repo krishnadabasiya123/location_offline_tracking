@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1092503038312",
+    "project_id": "omakr-aa582",
+    "storage_bucket": "omakr-aa582.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1092503038312:android:ea69cd01cc62972aac4edd",
+        "android_client_info": {
+          "package_name": "com.omkar.sale"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCBsfPvd32iVS6Bobrwp1Gg1IJlkkvDjE0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
