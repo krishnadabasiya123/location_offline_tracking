@@ -52,9 +52,28 @@ class LocationRepository {
     return 0;
   }
 
-  /// Sync locations to server date-wise and within time limits (Isolate filtered)
+  /// Sync locations to server date-wise and within time limits (Compatibility Wrapper)
   Future<Map<String, dynamic>> syncLocationsToServer({
     required String date,
+    int? upToTimestamp,
+    int? fromTimestamp,
+    int chunkSize = 500,
+  }) async {
+    final result = await syncLocationsForShift(
+      dates: [date],
+      upToTimestamp: upToTimestamp,
+      fromTimestamp: fromTimestamp,
+      chunkSize: chunkSize,
+    );
+    return {
+      'success': result['success'] ?? false,
+      'failed': result['failed'] ?? [],
+    };
+  }
+
+  /// Sync locations across multiple dates spanned by the shift
+  Future<Map<String, dynamic>> syncLocationsForShift({
+    required List<String> dates,
     int? upToTimestamp,
     int? fromTimestamp,
     int chunkSize = 500,
@@ -64,7 +83,6 @@ class LocationRepository {
       return {'success': true, 'failed': []};
     }
     _isSyncing = true;
-
     try {
       if (Hive.isBoxOpen(kHiveBoxName)) {
         try {
@@ -74,119 +92,121 @@ class LocationRepository {
         }
       }
       final locBox = await Hive.openBox(kHiveBoxName);
-
-      final formattedMap = locBox.toMap().map((key, value) {
-        if (value is Map && value['location'] is List) {
-          final locs = List<dynamic>.from(value['location'] as Iterable).map((
-            loc,
-          ) {
+      // Collect and map all coordinates with their source date
+      final List<Map<String, dynamic>> allCoordinates = [];
+      for (final date in dates) {
+        final locBoxData = locBox.get(date);
+        if (locBoxData != null &&
+            locBoxData is Map &&
+            locBoxData['location'] != null) {
+          final locs = List<dynamic>.from(
+            locBoxData['location'] as Iterable? ?? [],
+          );
+          for (final loc in locs) {
             if (loc is Map) {
-              final newLoc = Map<String, dynamic>.from(loc);
-              final timeVal = newLoc['time'];
-              if (timeVal is int) {
-                final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
-                newLoc['time'] = DateFormat('dd-MM-yyyy HH:mm:ss').format(dt);
-              }
-              return newLoc;
+              allCoordinates.add({
+                'date': date,
+                'entry': Map<String, dynamic>.from(loc),
+              });
             }
-            return loc;
-          }).toList();
-          return MapEntry(key.toString(), {'location': locs});
-        }
-        return MapEntry(key.toString(), value);
-      });
-
-      final locBoxData = locBox.get(date);
-
-      var isSyncSuccess = true;
-      final failedCoordinates = <dynamic>[];
-      final coordinatesToKeep = <dynamic>[];
-
-      if (locBoxData != null &&
-          locBoxData is Map &&
-          locBoxData['location'] != null) {
-        final allLocations = List<dynamic>.from(
-          locBoxData['location'] as Iterable? ?? [],
-        );
-
-        Map<String, List<dynamic>> filterResult;
-        try {
-          filterResult = await Isolate.run(() {
-            log('allLocations : $allLocations');
-            return _filterLocations(allLocations, upToTimestamp, fromTimestamp);
-          });
-        } catch (e) {
-          print('⚠️ REPO: Isolate failed. Filtering on main thread: $e');
-          filterResult = _filterLocations(
-            allLocations,
-            upToTimestamp,
-            fromTimestamp,
-          );
-        }
-
-        final coordinatesToSync = filterResult['toSync']!;
-        coordinatesToKeep.addAll(filterResult['toKeep']!);
-
-        if (coordinatesToSync.isNotEmpty) {
-          print(
-            '🚀 REPO: Uploading ${coordinatesToSync.length} coordinates in chunks...',
-          );
-
-          for (var i = 0; i < coordinatesToSync.length; i += chunkSize) {
-            final end = (i + chunkSize < coordinatesToSync.length)
-                ? i + chunkSize
-                : coordinatesToSync.length;
-
-            final chunk = coordinatesToSync.sublist(i, end);
-
-            // Print the chunk details to be synced
-            final formattedChunk = chunk.map((loc) {
-              if (loc is Map) {
-                final newLoc = Map<String, dynamic>.from(loc);
-                final timeVal = newLoc['time'];
-                if (timeVal is int) {
-                  final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
-                  newLoc['time'] = DateFormat('dd-MM-yyyy HH:mm:ss').format(dt);
-                }
-                return newLoc;
-              }
-              return loc;
-            }).toList();
-            print(
-              '📤 REPO: Syncing chunk [${i + 1} to $end] of ${coordinatesToSync.length}. Data: $formattedChunk',
-            );
-
-            // Check connection
-            final hasInternet = await InternetConnectivity.checkInternet();
-            if (!isSyncSuccess || !hasInternet) {
-              isSyncSuccess = false;
-              failedCoordinates.addAll(coordinatesToSync.sublist(i));
-              print('❌ REPO: Internet lost during sync.');
-              break;
-            }
-
-            final success = await _uploadLocationChunkApi(chunk);
-            if (!success) {
-              isSyncSuccess = false;
-              failedCoordinates.addAll(coordinatesToSync.sublist(i));
-              print('❌ REPO: Chunk upload failed.');
-              break;
-            }
-          }
-
-          final updatedLocs = [...failedCoordinates, ...coordinatesToKeep];
-          final activeLocBox = Hive.isBoxOpen(kHiveBoxName)
-              ? Hive.box(kHiveBoxName)
-              : await Hive.openBox(kHiveBoxName);
-          if (updatedLocs.isEmpty) {
-            await activeLocBox.delete(date);
-            print('🎉 REPO: All locations for $date synced & deleted.');
-          } else {
-            await activeLocBox.put(date, {'location': updatedLocs});
           }
         }
       }
-      return {'success': isSyncSuccess, 'failed': failedCoordinates};
+      // Filter locations to sync vs locations to keep
+      final List<Map<String, dynamic>> coordinatesToSync = [];
+      final List<Map<String, dynamic>> coordinatesToKeep = [];
+      for (final item in allCoordinates) {
+        final loc = item['entry'];
+        final int? locTime = loc['time'] as int?;
+        if (locTime == null) {
+          coordinatesToSync.add(item);
+          continue;
+        }
+        final isAfterClockIn =
+            fromTimestamp == null || locTime >= fromTimestamp;
+        final isBeforeClockOut =
+            upToTimestamp == null || locTime <= upToTimestamp;
+        if (isAfterClockIn && isBeforeClockOut) {
+          coordinatesToSync.add(item);
+        } else {
+          coordinatesToKeep.add(item);
+        }
+      }
+      var isSyncSuccess = true;
+      final List<Map<String, dynamic>> failedCoordinates = [];
+      if (coordinatesToSync.isNotEmpty) {
+        print(
+          '🚀 REPO: Uploading ${coordinatesToSync.length} combined coordinates in chunks...',
+        );
+        for (var i = 0; i < coordinatesToSync.length; i += chunkSize) {
+          final end = (i + chunkSize < coordinatesToSync.length)
+              ? i + chunkSize
+              : coordinatesToSync.length;
+          final chunk = coordinatesToSync.sublist(i, end);
+          final rawChunkEntries = chunk.map((c) => c['entry']).toList();
+          // Print the chunk details to be synced (formatted time)
+          final formattedChunk = rawChunkEntries.map((loc) {
+            final newLoc = Map<String, dynamic>.from(loc as Map);
+            final timeVal = newLoc['time'];
+            if (timeVal is int) {
+              final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
+              newLoc['time'] = DateFormat('dd-MM-yyyy HH:mm:ss').format(dt);
+            }
+            return newLoc;
+          }).toList();
+          print(
+            '📤 REPO: Syncing combined chunk [${i + 1} to $end] of ${coordinatesToSync.length}. Data: $formattedChunk',
+          );
+          // Check connection
+          final hasInternet = await InternetConnectivity.checkInternet();
+          if (!isSyncSuccess || !hasInternet) {
+            isSyncSuccess = false;
+            failedCoordinates.addAll(coordinatesToSync.sublist(i));
+            print('❌ REPO: Internet lost during sync.');
+            break;
+          }
+          final success = await _uploadLocationChunkApi(rawChunkEntries);
+          if (!success) {
+            isSyncSuccess = false;
+            failedCoordinates.addAll(coordinatesToSync.sublist(i));
+            print('❌ REPO: Chunk upload failed.');
+            break;
+          }
+        }
+        // Re-open Hive box just in case
+        final activeLocBox = Hive.isBoxOpen(kHiveBoxName)
+            ? Hive.box(kHiveBoxName)
+            : await Hive.openBox(kHiveBoxName);
+        // Group the remaining/failed coordinates by date so we can save them back
+        final Map<String, List<dynamic>> updatedLocationsByDate = {};
+        for (final date in dates) {
+          updatedLocationsByDate[date] = [];
+        }
+        // Add kept coordinates back
+        for (final item in coordinatesToKeep) {
+          final d = item['date'] as String;
+          updatedLocationsByDate[d]?.add(item['entry']);
+        }
+        // Add failed coordinates back (to retry later)
+        for (final item in failedCoordinates) {
+          final d = item['date'] as String;
+          updatedLocationsByDate[d]?.add(item['entry']);
+        }
+        // Save back to Hive
+        for (final date in dates) {
+          final list = updatedLocationsByDate[date]!;
+          if (list.isEmpty) {
+            await activeLocBox.delete(date);
+            print('🎉 REPO: All locations for $date synced & deleted.');
+          } else {
+            await activeLocBox.put(date, {'location': list});
+          }
+        }
+      }
+      return {
+        'success': isSyncSuccess,
+        'failed': failedCoordinates.map((c) => c['entry']).toList(),
+      };
     } finally {
       _isSyncing = false;
     }

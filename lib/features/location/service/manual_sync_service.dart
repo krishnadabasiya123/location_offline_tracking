@@ -476,73 +476,13 @@ class ManualSyncService {
       current = current.add(const Duration(days: 1));
     }
 
-    bool allSuccess = true;
-    for (final syncDate in datesToSync) {
-      // Print exactly which location data points are going to be synced
-      List<dynamic> coordinatesToSync = [];
-      try {
-        if (Hive.isBoxOpen(locationDataBox)) {
-          try {
-            await Hive.box(locationDataBox).close();
-          } catch (e) {
-            developer.log(
-              "⚠️ [ManualSyncService] Ignored error closing box: $e",
-            );
-          }
-        }
-        final locBox = await Hive.openBox(locationDataBox);
-        final locBoxData = locBox.get(syncDate);
-
-        // developer.log("📦 [ManualSyncService] Keys in locationDataBox: ${locBox.keys.toList()}");
-        // developer.log("📦 [ManualSyncService] Raw data for $syncDate: $locBoxData");
-
-        if (locBoxData != null && locBoxData['location'] != null) {
-          final List<dynamic> allLocations = List<dynamic>.from(
-            locBoxData['location'] as List<dynamic>,
-          );
-          coordinatesToSync = allLocations.where((loc) {
-            if (loc is! Map) return false;
-            final int? locTime = loc['time'] as int?;
-            if (locTime == null) return true;
-            final bool isAfterClockIn =
-                fromTimestamp == null || locTime >= fromTimestamp;
-            final bool isBeforeClockOut =
-                upToTimestamp == null || locTime <= upToTimestamp;
-            return isAfterClockIn && isBeforeClockOut;
-          }).toList();
-        }
-      } catch (e) {
-        developer.log("❌ [ManualSyncService] Error reading from Hive box: $e");
-      }
-
-      final formattedCoords = coordinatesToSync.map((loc) {
-        if (loc is Map) {
-          final newLoc = Map<String, dynamic>.from(loc);
-          final timeVal = newLoc['time'];
-          if (timeVal is int) {
-            final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
-            newLoc['time'] = DateFormat('dd-MM-yyyy HH:mm:ss').format(dt);
-          }
-          return newLoc;
-        }
-        return loc;
-      }).toList();
-
-      developer.log(
-        "📤 [ManualSyncService] Syncing locations for date $syncDate. Data: $formattedCoords",
-      );
-
-      final syncResult = await LocationRepository().syncLocationsToServer(
-        date: syncDate,
-        upToTimestamp: upToTimestamp,
-        fromTimestamp: fromTimestamp,
-        chunkSize: 500,
-      );
-      if (!(syncResult['success'] as bool? ?? false)) {
-        allSuccess = false;
-      }
-    }
-    return allSuccess;
+    final syncResult = await LocationRepository().syncLocationsForShift(
+      dates: datesToSync,
+      upToTimestamp: upToTimestamp,
+      fromTimestamp: fromTimestamp,
+      chunkSize: 500,
+    );
+    return syncResult['success'] as bool? ?? false;
   }
 }
 

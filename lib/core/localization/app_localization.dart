@@ -19,12 +19,18 @@ class AppLocalization {
 
   //to load json(language) from assets
   Future<void> loadJson() async {
-    final languageJsonName = locale.countryCode == null ? locale.languageCode : '${locale.languageCode}-${locale.countryCode}';
-    final jsonStringValues = await rootBundle.loadString('assets/languages/$languageJsonName.json');
+    final languageJsonName = locale.countryCode == null
+        ? locale.languageCode
+        : '${locale.languageCode}-${locale.countryCode}';
+    final jsonStringValues = await rootBundle.loadString(
+      'assets/languages/$languageJsonName.json',
+    );
     //value from rootbundle will be encoded string
     final mappedJson = jsonDecode(jsonStringValues) as Map<String, dynamic>;
 
-    _localizedValues = mappedJson.map((key, value) => MapEntry(key, value.toString()));
+    _localizedValues = mappedJson.map(
+      (key, value) => MapEntry(key, value.toString()),
+    );
   }
 
   //to get translated value of given title/key
@@ -33,7 +39,8 @@ class AppLocalization {
   }
 
   //need to declare custom delegate
-  static const LocalizationsDelegate<AppLocalization> delegate = _AppLocalizationDelegate();
+  static const LocalizationsDelegate<AppLocalization> delegate =
+      _AppLocalizationDelegate();
 }
 
 //Custom app delegate
@@ -43,7 +50,10 @@ class _AppLocalizationDelegate extends LocalizationsDelegate<AppLocalization> {
   //providing all supported languages
   @override
   bool isSupported(Locale locale) {
-    return supportedLocales.map(UiUtils.getLocaleFromLanguageCode).toList().contains(locale);
+    return supportedLocales
+        .map(UiUtils.getLocaleFromLanguageCode)
+        .toList()
+        .contains(locale);
   }
 
   //load languageCode.json files

@@ -327,67 +327,12 @@ class BackgroundSyncService {
       current = current.add(const Duration(days: 1));
     }
 
-    bool allSuccess = true;
-    for (final syncDate in datesToSync) {
-      // Print exactly which location data points are going to be synced
-      List<dynamic> coordinatesToSync = [];
-      try {
-        final locationDataBox = 'locationDataBox';
-        Box? locBox;
-        if (Hive.isBoxOpen(locationDataBox)) {
-          locBox = Hive.box(locationDataBox);
-        } else {
-          locBox = await Hive.openBox(locationDataBox);
-        }
-        final locBoxData = locBox.get(syncDate);
-        if (locBoxData != null && locBoxData['location'] != null) {
-          final List<dynamic> allLocations = List<dynamic>.from(
-            locBoxData['location'] as List<dynamic>,
-          );
-          coordinatesToSync = allLocations.where((loc) {
-            if (loc is! Map) return false;
-            final int? locTime = loc['time'] as int?;
-            if (locTime == null) return true;
-            return locTime >= fromTimestamp && locTime <= upToTimestamp;
-          }).toList();
-        }
-        // Try to close to release the lock, ignore any error
-        try {
-          await locBox.close();
-        } catch (_) {}
-      } catch (e) {
-        print(
-          "⚠️ [BackgroundSyncService] Error reading location details for logging: $e",
-        );
-      }
-
-      final formattedCoords = coordinatesToSync.map((loc) {
-        if (loc is Map) {
-          final newLoc = Map<String, dynamic>.from(loc);
-          final timeVal = newLoc['time'];
-          if (timeVal is int) {
-            final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
-            newLoc['time'] = DateFormat('dd-MM-yyyy HH:mm:ss').format(dt);
-          }
-          return newLoc;
-        }
-        return loc;
-      }).toList();
-
-      print(
-        "📤 [BackgroundSyncService] Syncing locations for date $syncDate. Data: $formattedCoords",
-      );
-
-      final syncResult = await LocationRepository().syncLocationsToServer(
-        date: syncDate,
-        upToTimestamp: upToTimestamp,
-        fromTimestamp: fromTimestamp,
-        chunkSize: 500,
-      );
-      if (syncResult['success'] != true) {
-        allSuccess = false;
-      }
-    }
-    return allSuccess;
+    final syncResult = await LocationRepository().syncLocationsForShift(
+      dates: datesToSync,
+      upToTimestamp: upToTimestamp,
+      fromTimestamp: fromTimestamp,
+      chunkSize: 500,
+    );
+    return syncResult['success'] as bool? ?? false;
   }
 }
