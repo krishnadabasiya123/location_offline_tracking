@@ -59,12 +59,12 @@ class BackgroundSyncService {
     if (!hasInternet) return;
 
     // Prevent conflict: If manual sync is currently active, abort background sync
-    if (ManualSyncService.instance.isManualSyncing) {
-      print(
-        '⚠️ [BackgroundSyncService] Manual sync is active. Aborting background sync.',
-      );
-      return;
-    }
+    // if (ManualSyncService.instance.isManualSyncing) {
+    //   print(
+    //     '⚠️ [BackgroundSyncService] Manual sync is active. Aborting background sync.',
+    //   );
+    //   return;
+    // }
 
     _isSyncing = true;
     _activeSync = syncAllPendingData();
@@ -280,7 +280,9 @@ class BackgroundSyncService {
     // 3. Sync the corresponding 'out' entry
     bool outSync = outRef.entry['isSync'] as bool? ?? false;
     if (!outSync) {
-      print('📤 [BackgroundSyncService] Sending Clock-Out data: ${outRef.entry}');
+      print(
+        '📤 [BackgroundSyncService] Sending Clock-Out data: ${outRef.entry}',
+      );
       outSync = await repository.clockOutApiDirectly(outRef.entry);
       outRef.entry['isSync'] = outSync;
 
@@ -354,7 +356,9 @@ class BackgroundSyncService {
           await locBox.close();
         } catch (_) {}
       } catch (e) {
-        print("⚠️ [BackgroundSyncService] Error reading location details for logging: $e");
+        print(
+          "⚠️ [BackgroundSyncService] Error reading location details for logging: $e",
+        );
       }
 
       final formattedCoords = coordinatesToSync.map((loc) {

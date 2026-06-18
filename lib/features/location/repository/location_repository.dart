@@ -96,14 +96,7 @@ class LocationRepository {
         return MapEntry(key.toString(), value);
       });
 
-      log("ALl location data is here in location repo :");
-      const JsonEncoder.withIndent(
-        '  ',
-      ).convert(formattedMap).split('\n').forEach((line) => log(line));
       final locBoxData = locBox.get(date);
-      print(
-        '📦 REPO syncLocationsToServer: Retrieved location data from Hive for $date: $locBoxData',
-      );
 
       var isSyncSuccess = true;
       final failedCoordinates = <dynamic>[];
@@ -145,6 +138,23 @@ class LocationRepository {
                 : coordinatesToSync.length;
 
             final chunk = coordinatesToSync.sublist(i, end);
+
+            // Print the chunk details to be synced
+            final formattedChunk = chunk.map((loc) {
+              if (loc is Map) {
+                final newLoc = Map<String, dynamic>.from(loc);
+                final timeVal = newLoc['time'];
+                if (timeVal is int) {
+                  final dt = DateTime.fromMillisecondsSinceEpoch(timeVal);
+                  newLoc['time'] = DateFormat('dd-MM-yyyy HH:mm:ss').format(dt);
+                }
+                return newLoc;
+              }
+              return loc;
+            }).toList();
+            print(
+              '📤 REPO: Syncing chunk [${i + 1} to $end] of ${coordinatesToSync.length}. Data: $formattedChunk',
+            );
 
             // Check connection
             final hasInternet = await InternetConnectivity.checkInternet();
@@ -201,7 +211,8 @@ class LocationRepository {
       }
 
       final isAfterClockIn = fromTimestamp == null || locTime >= fromTimestamp;
-      final isBeforeClockOut = upToTimestamp == null || locTime <= upToTimestamp;
+      final isBeforeClockOut =
+          upToTimestamp == null || locTime <= upToTimestamp;
 
       if (isAfterClockIn && isBeforeClockOut) {
         sync.add(loc);

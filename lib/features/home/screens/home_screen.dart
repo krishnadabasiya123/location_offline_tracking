@@ -350,128 +350,88 @@ class _HomeScreenState extends State<HomeScreen> {
       final List<Map<String, dynamic>> sessions = [];
       final List<Map<String, dynamic>> locations = [];
 
+      // CONFIGURATION: 8:00 to 13:00 (1 PM) and 14:00 (2 PM) to 17:00 (5 PM)
       final List<Map<String, dynamic>> shiftConfigs = [
         {
-          "startHour": 9,
+          "startHour": 8,
           "startMinute": 0,
-          "endHour": 9,
+          "endHour": 8, // Changed 1 to 13 (1 PM)
           "endMinute": 30,
           "inSync": false,
           "outSync": false,
         },
         {
-          "startHour": 9,
+          "startHour": 8,
           "startMinute": 45,
-          "endHour": 10,
-          "endMinute": 00,
+          "endHour": 9, // 5 PM
+          "endMinute": 0,
           "inSync": false,
           "outSync": false,
         },
-        // {
-        //   "startHour": 11,
-        //   "startMinute": 0,
-        //   "endHour": 11,
-        //   "endMinute": 30,
-        //   "inSync": false,
-        //   "outSync": false,
-        // },
-        // {
-        //   "startHour": 12,
-        //   "startMinute": 0,
-        //   "endHour": 12,
-        //   "endMinute": 30,
-        //   "inSync": false,
-        //   "outSync": false,
-        // },
-        // {
-        //   "startHour": 13,
-        //   "startMinute": 0,
-        //   "endHour": 13,
-        //   "endMinute": 30,
-        //   "inSync": false,
-        //   "outSync": false,
-        // },
       ];
 
       for (int i = 0; i < shiftConfigs.length; i++) {
         final config = shiftConfigs[i];
-        final startHour = config["startHour"] as int;
-        final startMinute = config["startMinute"] as int;
-        final endHour = config["endHour"] as int;
-        final endMinute = config["endMinute"] as int;
-        final inSync = config["inSync"] as bool;
-        final outSync = config["outSync"] as bool;
 
         final int inTime = DateTime(
           year,
           month,
           day,
-          startHour,
-          startMinute,
+          config["startHour"] as int,
+          config["startMinute"] as int,
         ).millisecondsSinceEpoch;
         final int outTime = DateTime(
           year,
           month,
           day,
-          endHour,
-          endMinute,
+          config["endHour"] as int,
+          config["endMinute"] as int,
         ).millisecondsSinceEpoch;
 
         final double baseLat = 23.23825 + (i * 0.010);
         final double baseLong = 69.68097 + (i * 0.010);
 
-        // Clock In
+        // 1. Add Clock-In for this shift
         sessions.add({
           "type": "in",
           "time": inTime,
           "lat": baseLat.toString(),
           "long": baseLong.toString(),
-          "isSync": inSync,
+          "isSync": config["inSync"],
         });
 
-        // Clock Out
+        // 2. Add Clock-Out for this shift
         sessions.add({
           "type": "out",
           "time": outTime,
           "lat": (baseLat + 0.002).toString(),
           "long": (baseLong + 0.002).toString(),
-          "isSync": outSync,
+          "isSync": config["outSync"],
         });
 
-        // Generate exactly 5 location points between inTime and outTime
-        final step = (outTime - inTime) ~/ 4; // 4 steps for 5 points
-        for (int j = 0; j < 3; j++) {
+        // 3. Generate location points ONLY between this shift's start and end time
+        int pointsPerShift = 500; // Total 1000 across both shifts
+        final step = (outTime - inTime) ~/ pointsPerShift;
+
+        for (int j = 0; j < pointsPerShift; j++) {
           locations.add({
             "date": dateStr,
             "time": inTime + (j * step),
-            "lat": baseLat + (j * 0.0005),
-            "long": baseLong + (j * 0.0005),
+            "lat": baseLat + (j * 0.00001),
+            "long": baseLong + (j * 0.00001),
           });
         }
       }
 
+      // Save to Hive
       await box.put(dateStr, sessions);
       await locBox.put(dateStr, {"location": locations});
 
-      // await box.put(clockInStatusKey, false);
-
       if (mounted) {
-        //        context.read<ClockInOutCubit>().();
-
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white),
-                SizedBox(width: 12),
-                Text(
-                  "Dummy data successfully seeded!",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
+          const SnackBar(
+            content: Text("Dummy data seeded for two shifts (8-1 and 2-5)"),
             backgroundColor: Color(0xFF10B981),
-            behavior: SnackBarBehavior.floating,
           ),
         );
       }

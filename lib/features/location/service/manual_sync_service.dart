@@ -298,13 +298,13 @@ class ManualSyncService {
     required int lastInEntryIndex,
   }) async {
     // Prevent conflict: If background sync is currently running, wait for it to complete
-    if (BackgroundSyncService.instance.isSyncing &&
-        BackgroundSyncService.instance.activeSyncFuture != null) {
-      developer.log(
-        "⏳ [ManualSyncService] Background sync is active. Awaiting completion before running manual sync...",
-      );
-      await BackgroundSyncService.instance.activeSyncFuture;
-    }
+    // if (BackgroundSyncService.instance.isSyncing &&
+    //     BackgroundSyncService.instance.activeSyncFuture != null) {
+    //   developer.log(
+    //     "⏳ [ManualSyncService] Background sync is active. Awaiting completion before running manual sync...",
+    //   );
+    //   await BackgroundSyncService.instance.activeSyncFuture;
+    // }
 
     if (_isManualSyncing) return;
     _isManualSyncing = true;
@@ -485,7 +485,9 @@ class ManualSyncService {
           try {
             await Hive.box(locationDataBox).close();
           } catch (e) {
-            developer.log("⚠️ [ManualSyncService] Ignored error closing box: $e");
+            developer.log(
+              "⚠️ [ManualSyncService] Ignored error closing box: $e",
+            );
           }
         }
         final locBox = await Hive.openBox(locationDataBox);
